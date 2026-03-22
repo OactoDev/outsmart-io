@@ -120,24 +120,38 @@ module.exports = async function handler(req, res) {
           const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
 
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
-          const r = await fetch(geminiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: 'You are playing a drawing guessing game. This is a pixel art drawing in progress. Try your best to guess what object, animal, or thing is being drawn, even if the drawing is incomplete or rough. Think about common drawing game words like animals, food, vehicles, nature, household objects. Reply with ONLY a single word — your best guess. No punctuation, no explanation, just one word.' },
-                  { inlineData: { mimeType: 'image/png', data: base64 } }
-                ]
-              }],
-              generationConfig: { temperature: 0.5, maxOutputTokens: 200 },
-            }),
-          });
+          const payload = {
+            contents: [{
+              parts: [
+                { text: 'You are playing a drawing guessing game. This is a pixel art drawing in progress. Try your best to guess what object, animal, or thing is being drawn, even if the drawing is incomplete or rough. Think about common drawing game words like animals, food, vehicles, nature, household objects. Reply with ONLY a single word — your best guess. No punctuation, no explanation, just one word.' },
+                { inlineData: { mimeType: 'image/png', data: base64 } }
+              ]
+            }],
+            generationConfig: { temperature: 0.5, maxOutputTokens: 200 },
+          };
 
-          const d = await r.json();
+          // Try up to 2 times (handles 429 rate-limit with backoff)
+          let d = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const r = await fetch(geminiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+
+            if (r.status === 429 && attempt === 0) {
+              console.warn('Gemini 429 rate-limited, waiting 5s before retry…');
+              await new Promise(ok => setTimeout(ok, 5000));
+              continue;
+            }
+
+            d = await r.json();
+            break;
+          }
+
           console.log('Gemini response:', JSON.stringify(d).slice(0, 300));
 
-          if (d.candidates?.[0]?.content?.parts?.[0]?.text) {
+          if (d?.candidates?.[0]?.content?.parts?.[0]?.text) {
             let raw = d.candidates[0].content.parts[0].text.trim().toLowerCase().replace(/[^a-z\s]/g, '');
             guess = raw.split(/\s+/)[0] || raw;
             confidence = 0.85;

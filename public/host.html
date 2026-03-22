@@ -517,7 +517,7 @@
         let roundTimer = null;
         let roundTimeLeft = 60;
         const ROUND_SECONDS = 60;
-        const AI_GUESS_INTERVAL = 8000;
+        const AI_GUESS_INTERVAL = 15000;
 
         /* ═══════════════════════════════════════════════════════════════
          *  POSITION UI ELEMENTS — identical to original
@@ -1067,6 +1067,8 @@
 
             eventSource.addEventListener('game-ended', (e) => {
                 const data = JSON.parse(e.data);
+                // Server sends the word in game-ended — use it as backup
+                if (data.word) currentWord = data.word;
                 if (gamePhase === 'drawing') {
                     endRound(data.reason || 'timeout', data.winner);
                 }
@@ -1126,9 +1128,17 @@
                     body: JSON.stringify({ hostId, action: 'start' }),
                 });
                 const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Failed to start');
                 word = data.word || null;
             } catch (e) {
-                console.warn('Start notification failed:', e);
+                console.warn('Start failed:', e);
+                const status = document.getElementById('lobbyStatus');
+                if (status) status.textContent = '✗ ' + (e.message || 'Failed to start game');
+                return;
+            }
+            if (!word) {
+                console.error('Server did not return a word');
+                return;
             }
 
             startGame(word);
@@ -1235,8 +1245,10 @@
                 const data = await res.json();
                 console.log('AI guess:', data.guess, 'correct:', data.correct);
                 
-                // Show guess in UI (could animate this)
-                showAIGuess(data.guess);
+                // Only show bubble if AI has an actual guess (not "...")
+                if (data.guess && data.guess !== '...') {
+                    showAIGuess(data.guess);
+                }
                 
                 if (data.correct) {
                     endRound('ai_won');
@@ -1412,23 +1424,25 @@
                 animation: fadeIn 0.3s ease;
             `;
 
+            const displayWord = (currentWord || '???').toUpperCase();
+
             let iconCanvas, title, subtitle;
             if (reason === 'ai_won') {
                 iconCanvas = drawPixelRobot(80);
                 title = 'AI WINS!';
-                subtitle = `The word was: ${currentWord?.toUpperCase()}`;
+                subtitle = `The word was: ${displayWord}`;
             } else if (reason === 'timeout') {
                 iconCanvas = drawPixelClock(80);
                 title = 'TIME\'S UP!';
-                subtitle = `The word was: ${currentWord?.toUpperCase()}`;
+                subtitle = `The word was: ${displayWord}`;
             } else if (reason === 'player_won') {
                 iconCanvas = drawPixelHuman(80);
                 title = 'HUMANS WIN!';
-                subtitle = `${roundWinner || 'A player'} guessed: ${currentWord?.toUpperCase()}`;
+                subtitle = `${roundWinner || 'A player'} guessed: ${displayWord}`;
             } else {
                 iconCanvas = drawPixelHuman(80);
                 title = 'YOU WIN!';
-                subtitle = `Great drawing of: ${currentWord?.toUpperCase()}`;
+                subtitle = `Great drawing of: ${displayWord}`;
             }
 
             overlay.appendChild(iconCanvas);
