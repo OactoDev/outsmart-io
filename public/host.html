@@ -29,7 +29,7 @@
             width: 800px;
             height: 600px;
             transform-origin: center center;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .locked-bg {
@@ -914,12 +914,15 @@
         }
 
         function tickClock() {
-            const now = new Date();
-            const ms = (now.getSeconds() % ROUND_SECS) * 1000 + now.getMilliseconds();
-            const progress = ms / (ROUND_SECS * 1000);
-            const angle = progress * 360;
-            clockHandEl.style.transform = `rotate(${angle}deg)`;
-            if (progress < 0.02 && !scanning) triggerScan();
+            // During a round the hand is driven by updateClockDisplay() via the round timer.
+            // In lobby/idle spin from wall-clock time so the clock looks alive.
+            if (gamePhase !== 'drawing') {
+                const now = new Date();
+                const ms  = (now.getSeconds() % ROUND_SECS) * 1000 + now.getMilliseconds();
+                const progress = ms / (ROUND_SECS * 1000);
+                clockHandEl.style.transform = `rotate(${progress * 360}deg)`;
+            }
+            // Advance ongoing scan animation (triggered only by makeAIGuess)
             if (scanning) {
                 const elapsed = performance.now() - scanStartTime;
                 const scanProgress = Math.min(1, elapsed / SCAN_DURATION);
@@ -1209,7 +1212,7 @@
 
         async function makeAIGuess() {
             if (gamePhase !== 'drawing') return;
-            
+            triggerScan(); // visual: AI is scanning the drawing
             try {
                 // Get canvas image data
                 const imageData = drawCanvas.toDataURL('image/png');
