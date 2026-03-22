@@ -109,12 +109,14 @@
             pointer-events: none;
             image-rendering: pixelated;
             transition: filter 0.15s step-end;
+            display: none;
         }
         #clock-hand {
             position: absolute;
             z-index: 26;
             pointer-events: none;
             image-rendering: pixelated;
+            display: none;
         }
         #clock-face.scan-flash {
             filter: brightness(2) drop-shadow(0 0 6px #fff);
@@ -1149,6 +1151,9 @@
             // Show 3 → 2 → 1 → WORD countdown
             runCountdown(word, () => {
                 gamePhase = 'drawing';
+                // Show clock now that the round is live
+                clockFaceEl.style.display = '';
+                clockHandEl.style.display = '';
                 // Start timers
                 roundTimeLeft = ROUND_SECONDS;
                 startRoundTimer();
@@ -1296,6 +1301,9 @@
             roundWinner = winner || null;
             clearInterval(roundTimer);
             clearInterval(aiGuessTimer);
+            // Hide clock until next round
+            clockFaceEl.style.display = 'none';
+            clockHandEl.style.display = 'none';
 
             // Notify players via API/Pusher (only if not player_won, since server already sent game-ended)
             if (reason !== 'player_won') {
