@@ -1,0 +1,13 @@
+{
+  "name": "outsmart-io",
+  "version": "1.0.0",
+  "description": "Outsmart.io – Pixel-art drawing party game",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

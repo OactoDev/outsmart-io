@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outsmart.io</title>
+    <!-- QR Code library -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <style>
+        /* ══════════════════════════════════════════════════════════
+           BASE STYLES — copied 1:1 from the original index.html
+           ══════════════════════════════════════════════════════════ */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        img { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+        body {
+            background-color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            image-rendering: pixelated;
+            font-family: monospace;
+        }
+
+        .game-board {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            transform-origin: center center;
+            overflow: hidden;
+        }
+
+        .locked-bg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+            image-rendering: pixelated;
+        }
+
+        #layer-eyes-bg     { position: absolute; top: 91px; left: 37px; width: 725px; height: auto; z-index: 3; pointer-events: none; image-rendering: pixelated; }
+        #layer-eyes-pupils { position: absolute; top: 92px; left: 33px; width: 725px; height: auto; z-index: 4; pointer-events: none; image-rendering: pixelated; }
+        #layer-canvas      { position: absolute; top: 67px; left: -45px; width: 905px; height: auto; z-index: 5; pointer-events: none; image-rendering: pixelated; }
+        #layer-slider      { position: absolute; top: 556px; left: -103px; width: 1275px; height: auto; z-index: 6; pointer-events: none; image-rendering: pixelated; }
+        #layer-outsmart    { position: absolute; top: 430px; left: 0px; width: 800px; height: auto; z-index: 7; pointer-events: none; image-rendering: pixelated; }
+
+        /* Drawing canvas sits inside the frame */
+        #drawCanvas {
+            position: absolute;
+            top: 189px;
+            left: 310px;
+            width: 339px;
+            height: 339px;
+            z-index: 21;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Tool sprites */
+        .tool-btn {
+            position: absolute;
+            z-index: 20;
+            cursor: pointer;
+            image-rendering: pixelated;
+            transition: transform 0.1s step-end, filter 0.05s step-end;
+            filter: drop-shadow(0 1px 0 rgba(0,0,0,0.2));
+        }
+        .tool-btn:hover {
+            transform: scale(1.1);
+            filter:
+                drop-shadow(1px 0 0 rgba(255,255,255,0.5))
+                drop-shadow(-1px 0 0 rgba(255,255,255,0.5))
+                drop-shadow(0 1px 0 rgba(255,255,255,0.5))
+                drop-shadow(0 -1px 0 rgba(255,255,255,0.5));
+        }
+        .tool-btn.active {
+            transform: scale(1.15);
+            filter:
+                drop-shadow(2px 0 0 #d0d0d0)
+                drop-shadow(-2px 0 0 #d0d0d0)
+                drop-shadow(0 2px 0 #d0d0d0)
+                drop-shadow(0 -2px 0 #d0d0d0)
+                drop-shadow(2px 2px 0 #d0d0d0)
+                drop-shadow(-2px -2px 0 #d0d0d0)
+                drop-shadow(2px -2px 0 #d0d0d0)
+                drop-shadow(-2px 2px 0 #d0d0d0);
+        }
+
+        /* Undo / Redo */
+        .action-btn {
+            position: absolute;
+            z-index: 20;
+            cursor: pointer;
+            image-rendering: pixelated;
+            transition: transform 0.1s ease, opacity 0.15s ease;
+            opacity: 0.85;
+        }
+        .action-btn:hover { transform: scale(1.15); opacity: 1; }
+        .action-btn.disabled { opacity: 0.3; pointer-events: none; }
+
+        /* Clock */
+        #clock-face {
+            position: absolute;
+            z-index: 25;
+            pointer-events: none;
+            image-rendering: pixelated;
+            transition: filter 0.15s step-end;
+        }
+        #clock-hand {
+            position: absolute;
+            z-index: 26;
+            pointer-events: none;
+            image-rendering: pixelated;
+        }
+        #clock-face.scan-flash {
+            filter: brightness(2) drop-shadow(0 0 6px #fff);
+        }
+
+        /* Scan overlay on canvas */
+        #scanOverlay {
+            position: absolute;
+            top: 189px;
+            left: 310px;
+            width: 339px;
+            height: 339px;
+            z-index: 22;
+            pointer-events: none;
+            opacity: 0;
+            background: linear-gradient(
+                transparent 0%,
+                transparent calc(var(--scan-y, 0%) - 2px),
+                rgba(255,255,255,0.7) var(--scan-y, 0%),
+                transparent calc(var(--scan-y, 0%) + 2px),
+                transparent 100%
+            );
+            mix-blend-mode: screen;
+        }
+        #scanOverlay.active {
+            opacity: 1;
+        }
+
+        /* Tooltip */
+        #toolInfo {
+            position: absolute;
+            z-index: 50;
+            background: rgba(0,0,0,0.82);
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 9px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            white-space: nowrap;
+            letter-spacing: 0.5px;
+        }
+        #toolInfo.visible { opacity: 1; }
+
+        /* ══════════════════════════════════════════════════════════
+           MULTIPLAYER ADDITIONS — full-board lobby overlay
+           ══════════════════════════════════════════════════════════ */
+
+        /* Covers the entire 800×600 game board */
+        #lobbyInCanvas {
+            position: absolute;
+            inset: 0;
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            font-family: monospace;
+            transition: opacity 0.6s ease;
+        }
+        #lobbyInCanvas.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* ── Pre-room: just the Create button ── */
+        #preRoom {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            text-align: center;
+        }
+        #preRoom .lobby-title {
+            font-size: 28px;
+            font-weight: bold;
+            letter-spacing: 6px;
+            color: #000;
+        }
+        #preRoom .lobby-label {
+            font-size: 10px;
+            color: #999;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+        #createRoomBtn {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 14px 40px;
+            font-size: 14px;
+            font-family: monospace;
+            font-weight: bold;
+            letter-spacing: 3px;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }
+        #createRoomBtn:hover { background: #333; transform: scale(1.04); }
+        .lobby-status { font-size: 10px; color: #888; }
+
+        /* ── Post-room: two-column layout ── */
+        #postRoom {
+            display: none;
+            width: 100%;
+            height: 100%;
+            padding: 20px 40px;
+        }
+        #postRoom.active { display: grid; grid-template-columns: 1fr 1fr; gap: 0; align-items: center; }
+
+        /* Left column: QR + URL */
+        .lobby-left {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            border-right: 2px solid #eee;
+            padding-right: 32px;
+        }
+        .scan-label {
+            font-size: 10px;
+            color: #999;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        #qrCanvas {
+            display: block;
+            image-rendering: pixelated;
+            border: 6px solid #fff;
+            outline: 2px solid #ddd;
+        }
+        .join-url {
+            font-size: 9px;
+            color: #888;
+            word-break: break-all;
+            max-width: 220px;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        /* Right column: code + players + start */
+        .lobby-right {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding-left: 32px;
+        }
+        .room-code-label {
+            font-size: 10px;
+            color: #999;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+        .room-code-display {
+            font-size: 48px;
+            font-weight: bold;
+            letter-spacing: 10px;
+            color: #000;
+            font-family: monospace;
+            line-height: 1;
+        }
+        .player-list-title {
+            font-size: 10px;
+            color: #999;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .player-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            justify-content: center;
+            min-height: 24px;
+            max-width: 300px;
+        }
+        .player-chip {
+            background: #000;
+            color: #fff;
+            padding: 3px 10px;
+            font-size: 10px;
+            font-weight: bold;
+            font-family: monospace;
+            letter-spacing: 0.5px;
+            animation: chipPop 0.25s ease;
+        }
+        @keyframes chipPop { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .waiting-msg { color: #bbb; font-size: 10px; font-style: italic; }
+        #startBtn {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 12px 32px;
+            font-size: 13px;
+            font-family: monospace;
+            font-weight: bold;
+            letter-spacing: 3px;
+            cursor: pointer;
+            opacity: 0.25;
+            pointer-events: none;
+            transition: opacity 0.2s ease, background 0.15s ease;
+        }
+        #startBtn.ready { opacity: 1; pointer-events: auto; }
+        #startBtn.ready:hover { background: #333; }
+
+        /* Word banner (shown during drawing) */
+        #wordBanner {
+            position: absolute;
+            top: 155px;
+            left: 310px;
+            width: 339px;
+            z-index: 35;
+            text-align: center;
+            font-family: monospace;
+            color: #000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+        #wordBanner.visible { opacity: 1; }
+        #wordBanner .word-label { font-size: 8px; color: #999; letter-spacing: 2px; text-transform: uppercase; }
+        #wordBanner .word-text  { font-size: 18px; font-weight: bold; letter-spacing: 4px; }
+
+        /* Mobile redirect */
+        .mobile-notice {
+            display: none; position: fixed; inset: 0; z-index: 9999;
+            background: #fff; flex-direction: column; align-items: center;
+            justify-content: center; text-align: center; padding: 20px;
+            font-family: monospace; color: #333;
+        }
+        .mobile-notice .title { font-size: 24px; font-weight: bold; color: #000; letter-spacing: 3px; }
+
+        /* AI guess animation */
+        @keyframes bubblePop {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+
+        /* Result overlay fade */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Countdown overlay */
+        #countdownOverlay {
+            position: absolute;
+            inset: 0;
+            z-index: 40;
+            background: #fff;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: monospace;
+        }
+        #countdownOverlay.active { display: flex; }
+        #countdownOverlay .cd-number {
+            font-size: 120px;
+            font-weight: bold;
+            color: #000;
+            letter-spacing: 10px;
+            animation: cdPop 0.6s ease;
+        }
+        #countdownOverlay .cd-word {
+            font-size: 48px;
+            font-weight: bold;
+            color: #000;
+            letter-spacing: 8px;
+            animation: cdPop 0.6s ease;
+        }
+        @keyframes cdPop {
+            0% { transform: scale(2); opacity: 0; }
+            60% { transform: scale(0.95); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Pixel art icons for result screen */
+        .pixel-icon {
+            width: 80px;
+            height: 80px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Mobile redirect notice -->
+    <div class="mobile-notice" id="mobileNotice">
+        <div class="title">OUTSMART.IO</div>
+        <p style="margin:20px 0;color:#888;">This is the host display.<br>To play, scan the QR code on the host screen<br>or visit:</p>
+        <p style="color:#000;font-size:16px;font-weight:bold;" id="mobileRedirectUrl"></p>
+    </div>
+
+    <!-- ═══ GAME BOARD — identical structure to original ═══ -->
+    <div class="game-board" id="gameBoard">
+        <!-- Background -->
+        <img src="/assets/layers/background.png" class="locked-bg">
+
+        <!-- Eyes (skull + pupils) -->
+        <img id="layer-eyes-bg"     src="/assets/layers/eyes-bg.png">
+        <img id="layer-eyes-pupils" src="/assets/layers/eyes-pupils.png">
+
+        <!-- Canvas frame & decorative layers -->
+        <img id="layer-canvas"      src="/assets/layers/canvas.png">
+        <img id="layer-slider"      src="/assets/layers/slider.png">
+        <img id="layer-outsmart"    src="/assets/layers/outsmart.png">
+
+        <!-- Functional drawing canvas -->
+        <canvas id="drawCanvas"></canvas>
+        <div id="scanOverlay"></div>
+
+        <!-- MULTIPLAYER: full-board lobby overlay -->
+        <div id="lobbyInCanvas">
+            <div id="preRoom">
+                <div class="lobby-title">OUTSMART.IO</div>
+                <div class="lobby-label">PIXEL-ART PARTY GAME</div>
+                <button id="createRoomBtn">CREATE GAME</button>
+                <div class="lobby-status" id="preRoomStatus"></div>
+            </div>
+            <div id="postRoom">
+                <!-- Left: QR code + join URL -->
+                <div class="lobby-left">
+                    <div class="scan-label">SCAN TO JOIN</div>
+                    <canvas id="qrCanvas"></canvas>
+                    <div class="join-url" id="joinUrlDisplay"></div>
+                </div>
+                <!-- Right: room code + players + start -->
+                <div class="lobby-right">
+                    <div class="room-code-label">ROOM CODE</div>
+                    <div class="room-code-display" id="roomCodeDisplay">------</div>
+                    <div class="player-list-title">PLAYERS (<span id="playerCount">0</span>/8)</div>
+                    <div class="player-list" id="playerList">
+                        <div class="waiting-msg">Waiting for players…</div>
+                    </div>
+                    <div class="lobby-status" id="lobbyStatus" style="font-size:9px;letter-spacing:1px;"></div>
+                    <button id="startBtn">START GAME</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MULTIPLAYER: word banner -->
+        <div id="wordBanner">
+            <div class="word-label">DRAW THIS</div>
+            <div class="word-text" id="wordText">---</div>
+        </div>
+
+        <!-- MULTIPLAYER: countdown overlay -->
+        <div id="countdownOverlay"></div>
+
+        <!-- Tool buttons -->
+        <img id="btn-pencil"  class="tool-btn active" src="/assets/sprites/pencil.png"   data-tool="pencil"  title="Pencil (P)">
+        <img id="btn-brush"   class="tool-btn"        src="/assets/sprites/brush.png"    data-tool="brush"   title="Brush (B)">
+        <img id="btn-eraser"  class="tool-btn"        src="/assets/sprites/eraser.png"   data-tool="eraser"  title="Eraser (E)">
+        <img id="btn-spray"   class="tool-btn"        src="/assets/sprites/spraycan.png" data-tool="spray"   title="Spray (S)">
+        <img id="btn-drag"    class="tool-btn"        src="/assets/sprites/drag.png"     data-tool="drag"    title="Drag (D)">
+        <img id="btn-text"    class="tool-btn"        src="/assets/sprites/text.png"     data-tool="text"    title="Text (T)">
+        <img id="btn-bucket"  class="tool-btn"        src="/assets/sprites/bucket.png"   data-tool="bucket"  title="Fill (F)">
+
+        <!-- Undo / Redo -->
+        <img id="btn-undo" class="action-btn disabled" src="/assets/layers/undo.png" title="Undo (Ctrl+Z)">
+        <img id="btn-redo" class="action-btn disabled" src="/assets/layers/redo.png" title="Redo (Ctrl+Shift+Z)">
+
+        <!-- Clock -->
+        <img id="clock-face" src="/assets/layers/clock-cropped.png">
+        <img id="clock-hand" src="/assets/layers/clockhand-cropped.png">
+
+        <!-- Tooltip -->
+        <div id="toolInfo"></div>
+
+        <!-- MULTIPLAYER: player mini-canvases -->
+        <div class="player-canvases" id="playerCanvases"></div>
+    </div>
+
+    <script>
+    (() => {
+        /* ═══════════════════════════════════════════════════════════════
+         *  CONSTANTS — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        const MAX_EYE_OFFSET = 8;
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  MULTIPLAYER CONFIG
+         * ═══════════════════════════════════════════════════════════════ */
+        const API_BASE       = '';
+        const hostId         = 'host_' + Math.random().toString(36).slice(2, 10);
+        let roomCode  = null;
+        let players   = [];
+        let currentWord = null;
+        let eventSource = null;
+        let gamePhase = 'lobby';
+        let correctPlayerCount = 0;
+        let aiGuessTimer = null;
+        let roundTimer = null;
+        let roundTimeLeft = 60;
+        const ROUND_SECONDS = 60;
+        const AI_GUESS_INTERVAL = 8000;
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  POSITION UI ELEMENTS — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        const toolPositions = {
+            'btn-pencil':  { top: 368, left: 205, w: 80  },
+            'btn-brush':   { top: 229, left: 148, w: 85  },
+            'btn-eraser':  { top: 356, left: 149, w: 85  },
+            'btn-spray':   { top: 186, left: 243, w: 40  },
+            'btn-drag':    { top: 277, left: 207, w: 75  },
+            'btn-text':    { top: 462, left: 204, w: 60  },
+            'btn-bucket':  { top: 163, left: 164, w: 65  },
+        };
+        for (const [id, p] of Object.entries(toolPositions)) {
+            const el = document.getElementById(id);
+            Object.assign(el.style, { top: p.top+'px', left: p.left+'px', width: p.w+'px', height: 'auto' });
+        }
+
+        Object.assign(document.getElementById('btn-undo').style,
+            { top:'136px', left:'571px', width:'45px', height:'auto' });
+        Object.assign(document.getElementById('btn-redo').style,
+            { top:'136px', left:'624px', width:'45px', height:'auto' });
+
+        Object.assign(document.getElementById('clock-face').style, {
+            left: '10px', top: '360px', width: '200px', height: 'auto'
+        });
+        Object.assign(document.getElementById('clock-hand').style, {
+            left: '67px', top: '503px', width: '80px', height: 'auto',
+            transformOrigin: '4px 5px'
+        });
+
+        const currentColor = '#000000';
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  DRAWING CANVAS — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        const drawCanvas = document.getElementById('drawCanvas');
+        const dctx = drawCanvas.getContext('2d');
+
+        const GRID_W = 170;
+        const GRID_H = 170;
+        drawCanvas.width  = GRID_W;
+        drawCanvas.height = GRID_H;
+        drawCanvas.style.pointerEvents = 'auto';
+
+        dctx.imageSmoothingEnabled = false;
+        dctx.fillStyle = '#ffffff';
+        dctx.fillRect(0, 0, GRID_W, GRID_H);
+
+        /* ── Undo / Redo stack ─────────────────────────────────── */
+        let undoStack = [];
+        let redoStack = [];
+        const MAX_UNDO = 60;
+
+        function saveState() {
+            undoStack.push(dctx.getImageData(0, 0, GRID_W, GRID_H));
+            if (undoStack.length > MAX_UNDO) undoStack.shift();
+            redoStack = [];
+            refreshUndoRedo();
+        }
+        function undo() {
+            if (!undoStack.length) return;
+            redoStack.push(dctx.getImageData(0, 0, GRID_W, GRID_H));
+            dctx.putImageData(undoStack.pop(), 0, 0);
+            refreshUndoRedo();
+        }
+        function redo() {
+            if (!redoStack.length) return;
+            undoStack.push(dctx.getImageData(0, 0, GRID_W, GRID_H));
+            dctx.putImageData(redoStack.pop(), 0, 0);
+            refreshUndoRedo();
+        }
+        function refreshUndoRedo() {
+            document.getElementById('btn-undo').classList.toggle('disabled', !undoStack.length);
+            document.getElementById('btn-redo').classList.toggle('disabled', !redoStack.length);
+        }
+        document.getElementById('btn-undo').addEventListener('click', undo);
+        document.getElementById('btn-redo').addEventListener('click', redo);
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  PIXELATED CURSORS — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        function makeCursor(drawFn, size, hotX, hotY) {
+            const c = document.createElement('canvas');
+            c.width = size; c.height = size;
+            const x = c.getContext('2d');
+            x.imageSmoothingEnabled = false;
+            drawFn(x, size);
+            return `url(${c.toDataURL()}) ${hotX} ${hotY}, auto`;
+        }
+
+        const CURSORS = {};
+
+        CURSORS.pencil = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#000';
+            c.fillRect(m, 0, 2, m - 2);
+            c.fillRect(m, m + 3, 2, m - 2);
+            c.fillRect(0, m, m - 2, 2);
+            c.fillRect(m + 3, m, m - 2, 2);
+            c.fillStyle = '#ffcc00';
+            c.fillRect(m - 1, m - 1, 4, 4);
+            c.fillStyle = '#000';
+            c.fillRect(m, m, 2, 2);
+        }, 24, 12, 12);
+
+        CURSORS.brush = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.strokeStyle = '#333';
+            c.lineWidth = 2;
+            c.beginPath(); c.arc(m, m, m - 3, 0, Math.PI * 2); c.stroke();
+            c.fillStyle = 'rgba(100,100,255,0.15)';
+            c.fill();
+            c.fillStyle = '#333';
+            c.fillRect(m - 1, m - 1, 3, 3);
+        }, 32, 16, 16);
+
+        CURSORS.eraser = makeCursor((c, s) => {
+            c.fillStyle = '#ffe0e0';
+            c.fillRect(3, 3, s - 6, s - 6);
+            c.strokeStyle = '#e44';
+            c.lineWidth = 2;
+            c.strokeRect(3, 3, s - 6, s - 6);
+            c.beginPath();
+            c.moveTo(7, 7);   c.lineTo(s - 7, s - 7);
+            c.moveTo(s - 7, 7); c.lineTo(7, s - 7);
+            c.stroke();
+        }, 24, 12, 12);
+
+        CURSORS.spray = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#333';
+            [[m,m-5],[m-4,m-3],[m+4,m-2],[m-3,m+1],[m+3,m+3],
+             [m,m+5],[m-5,m],[m+5,m],[m-2,m-2],[m+2,m-4],
+             [m+1,m+2],[m-1,m+4]].forEach(([x,y]) => c.fillRect(x,y,2,2));
+            c.strokeStyle = 'rgba(0,0,0,0.25)';
+            c.lineWidth = 1;
+            c.setLineDash([2, 2]);
+            c.beginPath(); c.arc(m, m, m - 2, 0, Math.PI * 2); c.stroke();
+        }, 28, 14, 14);
+
+        CURSORS.drag = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#000';
+            c.fillRect(m - 1, 4, 3, s - 8);
+            c.fillRect(4, m - 1, s - 8, 3);
+            [[m,1,5],[m-2,4,1],[m+2,4,1]].forEach(([x,y,h]) => c.fillRect(x,y,1,h));
+            [[m,s-2,5],[m-2,s-5,1],[m+2,s-5,1]].forEach(([x,y]) => c.fillRect(x,y,1,1));
+            c.beginPath();
+            c.moveTo(m, 1);   c.lineTo(m-3,5);  c.lineTo(m+4,5);  c.fill();
+            c.beginPath();
+            c.moveTo(m, s-1); c.lineTo(m-3,s-5);c.lineTo(m+4,s-5);c.fill();
+            c.beginPath();
+            c.moveTo(1, m);   c.lineTo(5,m-3);  c.lineTo(5,m+4);  c.fill();
+            c.beginPath();
+            c.moveTo(s-1, m); c.lineTo(s-5,m-3);c.lineTo(s-5,m+4);c.fill();
+        }, 24, 12, 12);
+
+        CURSORS.text = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#000';
+            c.fillRect(m - 1, 3, 3, s - 6);
+            c.fillRect(m - 5, 3, 11, 2);
+            c.fillRect(m - 5, s - 5, 11, 2);
+        }, 24, 12, 12);
+
+        CURSORS.bucket = makeCursor((c, s) => {
+            c.fillStyle = '#555';
+            c.fillRect(4, 10, 14, 11);
+            c.fillStyle = '#4ac';
+            c.fillRect(5, 11, 12, 9);
+            c.fillStyle = '#555';
+            c.fillRect(9, 5, 6, 5);
+            c.fillRect(15, 7, 2, 5);
+            c.fillStyle = '#4ac';
+            c.fillRect(17, 12, 3, 2);
+            c.fillRect(19, 14, 2, 3);
+        }, 24, 19, 20);
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  TOOL STATE — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        let currentTool = 'pencil';
+        let brushSize   = 2;
+        let isDrawing   = false;
+        let lastX = -1, lastY = -1;
+        let dragStartX, dragStartY, dragSnapshot;
+
+        function selectTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.querySelector(`[data-tool="${tool}"]`);
+            if (btn) btn.classList.add('active');
+            drawCanvas.style.cursor = CURSORS[tool] || 'crosshair';
+        }
+
+        document.querySelectorAll('.tool-btn').forEach(btn =>
+            btn.addEventListener('click', () => selectTool(btn.dataset.tool)));
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const map = { p:'pencil', b:'brush', e:'eraser', s:'spray', d:'drag', t:'text', f:'bucket' };
+            if (map[e.key]) selectTool(map[e.key]);
+            if (e.key === '[') brushSize = Math.max(1, brushSize - 1);
+            if (e.key === ']') brushSize = Math.min(16, brushSize + 1);
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+        });
+
+        selectTool('pencil');
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  DRAWING HELPERS — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        function toGrid(e) {
+            const r = drawCanvas.getBoundingClientRect();
+            return {
+                x: Math.floor((e.clientX - r.left) * GRID_W / r.width),
+                y: Math.floor((e.clientY - r.top)  * GRID_H / r.height)
+            };
+        }
+
+        function stamp(x, y, size, color) {
+            dctx.fillStyle = color;
+            const h = size >> 1;
+            for (let dy = -h; dy < size - h; dy++)
+                for (let dx = -h; dx < size - h; dx++) {
+                    const px = x + dx, py = y + dy;
+                    if (px >= 0 && px < GRID_W && py >= 0 && py < GRID_H)
+                        dctx.fillRect(px, py, 1, 1);
+                }
+        }
+
+        function line(x0, y0, x1, y1, size, color) {
+            const dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+            const sx = x0<x1?1:-1,       sy = y0<y1?1:-1;
+            let err = dx - dy;
+            for (;;) {
+                stamp(x0, y0, size, color);
+                if (x0===x1 && y0===y1) break;
+                const e2 = 2*err;
+                if (e2 > -dy) { err -= dy; x0 += sx; }
+                if (e2 <  dx) { err += dx; y0 += sy; }
+            }
+        }
+
+        function spray(x, y, radius, count, color) {
+            dctx.fillStyle = color;
+            for (let i = 0; i < count; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const d = Math.random() * radius;
+                const px = Math.round(x + Math.cos(a)*d);
+                const py = Math.round(y + Math.sin(a)*d);
+                if (px>=0 && px<GRID_W && py>=0 && py<GRID_H)
+                    dctx.fillRect(px, py, 1, 1);
+            }
+        }
+
+        function floodFill(sx, sy, fillHex) {
+            if (sx<0||sx>=GRID_W||sy<0||sy>=GRID_H) return;
+            const imgData = dctx.getImageData(0,0,GRID_W,GRID_H);
+            const d = imgData.data;
+            const ti = (sy*GRID_W+sx)*4;
+            const tR=d[ti],tG=d[ti+1],tB=d[ti+2],tA=d[ti+3];
+            const tc = document.createElement('canvas'); tc.width=tc.height=1;
+            const tx = tc.getContext('2d'); tx.fillStyle=fillHex; tx.fillRect(0,0,1,1);
+            const fc = tx.getImageData(0,0,1,1).data;
+            if (tR===fc[0]&&tG===fc[1]&&tB===fc[2]&&tA===fc[3]) return;
+            const stack = [[sx,sy]];
+            const seen = new Uint8Array(GRID_W*GRID_H);
+            while (stack.length) {
+                const [x,y] = stack.pop();
+                const k = y*GRID_W+x;
+                if (seen[k]) continue;
+                if (x<0||x>=GRID_W||y<0||y>=GRID_H) continue;
+                const i = k*4;
+                if (d[i]!==tR||d[i+1]!==tG||d[i+2]!==tB||d[i+3]!==tA) continue;
+                seen[k] = 1;
+                d[i]=fc[0]; d[i+1]=fc[1]; d[i+2]=fc[2]; d[i+3]=fc[3];
+                stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+            }
+            dctx.putImageData(imgData,0,0);
+        }
+
+        /* ── Canvas mouse handling — blocks drawing during lobby ── */
+        drawCanvas.addEventListener('mousedown', (e) => {
+            if (gamePhase === 'lobby') return;
+
+            e.preventDefault();
+            const {x,y} = toGrid(e);
+            isDrawing = true;
+            lastX = x; lastY = y;
+
+            if (currentTool === 'bucket') {
+                saveState();
+                floodFill(x, y, currentColor);
+                isDrawing = false;
+                return;
+            }
+            if (currentTool === 'text') {
+                const txt = prompt('Enter text:');
+                if (txt) {
+                    saveState();
+                    dctx.fillStyle = currentColor;
+                    dctx.font = `bold ${Math.max(6, brushSize*3)}px monospace`;
+                    dctx.textBaseline = 'top';
+                    dctx.fillText(txt, x, y);
+                }
+                isDrawing = false;
+                return;
+            }
+            if (currentTool === 'drag') {
+                dragStartX = x; dragStartY = y;
+                dragSnapshot = dctx.getImageData(0,0,GRID_W,GRID_H);
+                return;
+            }
+
+            saveState();
+            const col = currentTool === 'eraser' ? '#ffffff' : currentColor;
+            if (currentTool === 'spray') spray(x, y, brushSize*3, brushSize*10, col);
+            else stamp(x, y, currentTool==='brush' ? brushSize+1 : brushSize, col);
+        });
+
+        drawCanvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const {x,y} = toGrid(e);
+
+            if (currentTool === 'drag') {
+                dctx.putImageData(dragSnapshot, x-dragStartX, y-dragStartY);
+                return;
+            }
+
+            const col = currentTool === 'eraser' ? '#ffffff' : currentColor;
+            if (currentTool === 'spray') {
+                spray(x, y, brushSize*3, brushSize*5, col);
+            } else {
+                line(lastX, lastY, x, y, currentTool==='brush' ? brushSize+1 : brushSize, col);
+            }
+            lastX = x; lastY = y;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isDrawing && currentTool === 'drag' && dragSnapshot) saveState();
+            isDrawing = false;
+            lastX = lastY = -1;
+        });
+
+        drawCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            brushSize = Math.max(1, Math.min(16, brushSize + (e.deltaY < 0 ? 1 : -1)));
+        }, { passive: false });
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  EYE TRACKING — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        const pupilsEl = document.getElementById('layer-eyes-pupils');
+        let boardMX = 400;
+        let eyeOverride = false;
+        const CANVAS_CENTER_X = 310 + 339 / 2;
+
+        document.getElementById('gameBoard').addEventListener('mousemove', (e) => {
+            const r = document.getElementById('gameBoard').getBoundingClientRect();
+            boardMX = (e.clientX - r.left) * (800 / r.width);
+        });
+
+        function tickEyes() {
+            const lookX = eyeOverride ? CANVAS_CENTER_X : boardMX;
+            const eyesCenterX = 400;
+            const delta = lookX - eyesCenterX;
+            const norm = Math.max(-1, Math.min(1, delta / 300));
+            const off = norm * MAX_EYE_OFFSET;
+            pupilsEl.style.transform = `translateX(${off}px)`;
+            requestAnimationFrame(tickEyes);
+        }
+        tickEyes();
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  CLOCK ANIMATION — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        const clockHandEl  = document.getElementById('clock-hand');
+        const clockFaceEl  = document.getElementById('clock-face');
+        const scanOverlay  = document.getElementById('scanOverlay');
+        const ROUND_SECS   = 10;
+        const SCAN_DURATION = 800;
+        let scanning       = false;
+        let scanStartTime  = 0;
+
+        function triggerScan() {
+            if (scanning) return;
+            scanning = true;
+            scanStartTime = performance.now();
+            clockFaceEl.classList.add('scan-flash');
+            setTimeout(() => clockFaceEl.classList.remove('scan-flash'), 300);
+            eyeOverride = true;
+            scanOverlay.classList.add('active');
+        }
+
+        function tickClock() {
+            const now = new Date();
+            const ms = (now.getSeconds() % ROUND_SECS) * 1000 + now.getMilliseconds();
+            const progress = ms / (ROUND_SECS * 1000);
+            const angle = progress * 360;
+            clockHandEl.style.transform = `rotate(${angle}deg)`;
+            if (progress < 0.02 && !scanning) triggerScan();
+            if (scanning) {
+                const elapsed = performance.now() - scanStartTime;
+                const scanProgress = Math.min(1, elapsed / SCAN_DURATION);
+                scanOverlay.style.setProperty('--scan-y', (scanProgress * 100) + '%');
+                if (scanProgress >= 1) {
+                    scanning = false;
+                    eyeOverride = false;
+                    scanOverlay.classList.remove('active');
+                }
+            }
+            requestAnimationFrame(tickClock);
+        }
+        tickClock();
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  TOOLTIP — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        const tip = document.getElementById('toolInfo');
+        document.querySelectorAll('.tool-btn, .action-btn').forEach(btn => {
+            btn.addEventListener('mouseenter', () => {
+                tip.textContent = btn.title || '';
+                if (!tip.textContent) return;
+                tip.classList.add('visible');
+                const br = btn.getBoundingClientRect();
+                const gr = document.getElementById('gameBoard').getBoundingClientRect();
+                const sc = 800 / gr.width;
+                tip.style.left = ((br.right - gr.left) * sc + 6) + 'px';
+                tip.style.top  = ((br.top   - gr.top)  * sc)     + 'px';
+            });
+            btn.addEventListener('mouseleave', () => tip.classList.remove('visible'));
+        });
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  AUTO-SCALE — identical to original
+         * ═══════════════════════════════════════════════════════════════ */
+        function scaleGame() {
+            const board = document.getElementById('gameBoard');
+            const s = Math.min(window.innerWidth / 720, window.innerHeight / 520) * 0.95;
+            board.style.transform = `scale(${s})`;
+        }
+        scaleGame();
+        window.addEventListener('resize', scaleGame);
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  MOBILE DETECTION
+         * ═══════════════════════════════════════════════════════════════ */
+        function isMobile() {
+            return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                || (window.innerWidth <= 768 && 'ontouchstart' in window);
+        }
+        if (isMobile()) {
+            document.getElementById('mobileNotice').style.display = 'flex';
+            document.getElementById('gameBoard').style.display = 'none';
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  MULTIPLAYER: CREATE ROOM
+         * ═══════════════════════════════════════════════════════════════ */
+        document.getElementById('createRoomBtn').addEventListener('click', async () => {
+            const status = document.getElementById('preRoomStatus');
+            status.textContent = 'Creating…';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/rooms/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hostId }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Failed');
+
+                roomCode = data.roomCode;
+                onRoomCreated();
+            } catch (err) {
+                status.textContent = '✗ ' + err.message;
+            }
+        });
+
+        function onRoomCreated() {
+            document.getElementById('preRoom').style.display = 'none';
+            document.getElementById('postRoom').classList.add('active');
+            document.getElementById('roomCodeDisplay').textContent = roomCode;
+
+            const joinUrl = `${window.location.origin}/?room=${roomCode}`;
+            document.getElementById('joinUrlDisplay').textContent = joinUrl;
+            document.getElementById('mobileRedirectUrl').textContent = joinUrl;
+
+            QRCode.toCanvas(document.getElementById('qrCanvas'), joinUrl, {
+                width: 200, margin: 2,
+                color: { dark: '#000000', light: '#ffffff' },
+            }, function(err) {
+                if (err) console.error('QR generation failed:', err);
+            });
+
+            connectSSE();
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  MULTIPLAYER: PUSHER + POLLING FALLBACK
+         * ═══════════════════════════════════════════════════════════════ */
+        let pollInterval = null;
+
+        function setStatus(msg, color) {
+            const el = document.getElementById('lobbyStatus');
+            if (el) { el.textContent = msg; el.style.color = color || '#888'; }
+        }
+
+        function connectSSE() {
+            setStatus('Connecting…', '#888');
+
+            // Close existing connection if any
+            if (eventSource) { eventSource.close(); eventSource = null; }
+
+            eventSource = new EventSource(`${API_BASE}/api/events?room=${roomCode}`);
+
+            eventSource.addEventListener('connected', () => {
+                console.log('✓ SSE connected to room-' + roomCode);
+                setStatus('Live ●', '#4caf50');
+            });
+
+            eventSource.addEventListener('player-joined', (e) => {
+                const data = JSON.parse(e.data);
+                console.log('player-joined event:', data);
+                players = data.players || [];
+                updatePlayerList();
+            });
+
+            eventSource.addEventListener('player-guessed', (e) => {
+                const data = JSON.parse(e.data);
+                if (data.correct) {
+                    correctPlayerCount++;
+                    showPlayerGuess(data.playerName, '***', true);
+                    if (correctPlayerCount >= players.length && players.length > 0 && gamePhase === 'drawing') {
+                        endRound('player_won', 'All players');
+                    }
+                } else {
+                    showPlayerGuess(data.playerName, data.guess, false);
+                }
+            });
+
+            eventSource.addEventListener('game-ended', (e) => {
+                const data = JSON.parse(e.data);
+                if (gamePhase === 'drawing') {
+                    endRound(data.reason || 'timeout', data.winner);
+                }
+            });
+
+            eventSource.onerror = () => {
+                console.warn('SSE connection error, will auto-reconnect');
+                setStatus('Reconnecting…', '#f90');
+            };
+
+            // Polling fallback: refresh player list every 3s
+            pollInterval = setInterval(pollRoom, 3000);
+        }
+
+        async function pollRoom() {
+            if (gamePhase !== 'lobby' || !roomCode) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/rooms/${roomCode}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                // Only update if count changed (avoids flicker)
+                if (data.players && data.players.length !== players.length) {
+                    players = data.players;
+                    updatePlayerList();
+                }
+            } catch (e) { /* silent */ }
+        }
+
+        function updatePlayerList() {
+            const list  = document.getElementById('playerList');
+            const count = document.getElementById('playerCount');
+            count.textContent = players.length;
+
+            if (players.length === 0) {
+                list.innerHTML = '<div class="waiting-msg">Waiting for players…</div>';
+            } else {
+                list.innerHTML = players.map(p =>
+                    `<div class="player-chip">${escapeHtml(p.nickname)}</div>`
+                ).join('');
+            }
+
+            document.getElementById('startBtn')
+                .classList.toggle('ready', players.length >= 1);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  MULTIPLAYER: START GAME
+         * ═══════════════════════════════════════════════════════════════ */
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            if (players.length < 1) return;
+
+            let word = null;
+            try {
+                const res = await fetch(`${API_BASE}/api/rooms/${roomCode}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hostId, action: 'start' }),
+                });
+                const data = await res.json();
+                word = data.word || null;
+            } catch (e) {
+                console.warn('Start notification failed:', e);
+            }
+
+            startGame(word);
+        });
+
+        function startGame(word) {
+            currentWord = word;
+            correctPlayerCount = 0;
+
+            // Stop lobby polling
+            clearInterval(pollInterval);
+            pollInterval = null;
+
+            // Hide the lobby overlay
+            document.getElementById('lobbyInCanvas').classList.add('hidden');
+
+            // Hide word banner (word must NOT be visible during drawing)
+            document.getElementById('wordBanner').classList.remove('visible');
+
+            // Show 3 → 2 → 1 → WORD countdown
+            runCountdown(word, () => {
+                gamePhase = 'drawing';
+                // Start timers
+                roundTimeLeft = ROUND_SECONDS;
+                startRoundTimer();
+                startAIGuessing();
+            });
+        }
+
+        function runCountdown(word, onDone) {
+            const overlay = document.getElementById('countdownOverlay');
+            overlay.classList.add('active');
+
+            const steps = [
+                { text: '3', isWord: false },
+                { text: '2', isWord: false },
+                { text: '1', isWord: false },
+                { text: word ? word.toUpperCase() : 'DRAW!', isWord: true },
+            ];
+
+            let i = 0;
+            function showStep() {
+                if (i >= steps.length) {
+                    overlay.classList.remove('active');
+                    overlay.innerHTML = '';
+                    onDone();
+                    return;
+                }
+                const step = steps[i];
+                overlay.innerHTML = `<div class="${step.isWord ? 'cd-word' : 'cd-number'}">${step.text}</div>`;
+                i++;
+                setTimeout(showStep, step.isWord ? 1500 : 800);
+            }
+            showStep();
+        }
+
+        function startRoundTimer() {
+            clearInterval(roundTimer);
+            roundTimer = setInterval(() => {
+                roundTimeLeft--;
+                updateClockDisplay();
+                if (roundTimeLeft <= 0) {
+                    endRound('timeout');
+                }
+            }, 1000);
+        }
+
+        function updateClockDisplay() {
+            // Update clock hand based on remaining time
+            const progress = 1 - (roundTimeLeft / ROUND_SECONDS);
+            const angle = progress * 360;
+            clockHandEl.style.transform = `rotate(${angle}deg)`;
+        }
+
+        function startAIGuessing() {
+            clearInterval(aiGuessTimer);
+            // Start AI guessing after 5 seconds
+            setTimeout(() => {
+                makeAIGuess();
+                aiGuessTimer = setInterval(makeAIGuess, AI_GUESS_INTERVAL);
+            }, 5000);
+        }
+
+        async function makeAIGuess() {
+            if (gamePhase !== 'drawing') return;
+            
+            try {
+                // Get canvas image data
+                const imageData = drawCanvas.toDataURL('image/png');
+                
+                const res = await fetch(`${API_BASE}/api/guess`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        roomCode: roomCode,
+                        imageData: imageData,
+                        currentWord: currentWord,
+                    }),
+                });
+                
+                const data = await res.json();
+                console.log('AI guess:', data.guess, 'correct:', data.correct);
+                
+                // Show guess in UI (could animate this)
+                showAIGuess(data.guess);
+                
+                if (data.correct) {
+                    endRound('ai_won');
+                }
+            } catch (e) {
+                console.error('AI guess error:', e);
+            }
+        }
+
+        function showAIGuess(guess) {
+            // Create floating guess bubble
+            const bubble = document.createElement('div');
+            bubble.className = 'ai-guess-bubble';
+            bubble.textContent = `AI: ${guess}`;
+            bubble.style.cssText = `
+                position: absolute;
+                top: 520px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #000;
+                color: #fff;
+                padding: 8px 16px;
+                font-family: monospace;
+                font-size: 14px;
+                letter-spacing: 2px;
+                z-index: 50;
+                animation: bubblePop 2s ease forwards;
+            `;
+            document.getElementById('gameBoard').appendChild(bubble);
+            setTimeout(() => bubble.remove(), 2000);
+        }
+
+        function showPlayerGuess(playerName, guess, correct) {
+            const bubble = document.createElement('div');
+            if (correct) {
+                bubble.textContent = `${playerName} got it! (${correctPlayerCount}/${players.length})`;
+            } else {
+                bubble.textContent = `${playerName}: ${guess}`;
+            }
+            bubble.style.cssText = `
+                position: absolute;
+                top: ${490 - (correct ? 30 : 0)}px;
+                right: 20px;
+                background: ${correct ? '#4caf50' : '#2196f3'};
+                color: #fff;
+                padding: 8px 16px;
+                font-family: monospace;
+                font-size: ${correct ? '15' : '13'}px;
+                font-weight: bold;
+                letter-spacing: 1px;
+                z-index: 50;
+                animation: bubblePop ${correct ? '4' : '3'}s ease forwards;
+            `;
+            document.getElementById('gameBoard').appendChild(bubble);
+            setTimeout(() => bubble.remove(), correct ? 4000 : 3000);
+        }
+
+        let roundWinner = null;
+
+        function endRound(reason, winner) {
+            gamePhase = 'ended';
+            roundWinner = winner || null;
+            clearInterval(roundTimer);
+            clearInterval(aiGuessTimer);
+
+            // Notify players via API/Pusher (only if not player_won, since server already sent game-ended)
+            if (reason !== 'player_won') {
+                fetch(`${API_BASE}/api/end-game`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ roomId: roomCode, reason }),
+                }).catch(e => console.warn('End game notify failed:', e));
+            }
+
+            // Show result overlay
+            showResult(reason);
+        }
+
+        function drawPixelRobot(size) {
+            const c = document.createElement('canvas');
+            c.width = 16; c.height = 16;
+            c.className = 'pixel-icon';
+            c.style.width = size + 'px'; c.style.height = size + 'px';
+            const x = c.getContext('2d');
+            x.imageSmoothingEnabled = false;
+            x.fillStyle = '#000';
+            // head
+            x.fillRect(4,1,8,6);
+            // eyes
+            x.fillStyle = '#fff';
+            x.fillRect(5,3,2,2); x.fillRect(9,3,2,2);
+            x.fillStyle = '#000';
+            x.fillRect(6,4,1,1); x.fillRect(10,4,1,1);
+            // antenna
+            x.fillRect(7,0,2,1);
+            // body
+            x.fillRect(3,7,10,5);
+            // arms
+            x.fillRect(1,8,2,3); x.fillRect(13,8,2,3);
+            // legs
+            x.fillRect(5,12,2,4); x.fillRect(9,12,2,4);
+            // belt
+            x.fillStyle = '#666';
+            x.fillRect(4,9,8,1);
+            return c;
+        }
+
+        function drawPixelHuman(size) {
+            const c = document.createElement('canvas');
+            c.width = 16; c.height = 16;
+            c.className = 'pixel-icon';
+            c.style.width = size + 'px'; c.style.height = size + 'px';
+            const x = c.getContext('2d');
+            x.imageSmoothingEnabled = false;
+            x.fillStyle = '#000';
+            // head
+            x.fillRect(5,0,6,6);
+            // eyes
+            x.fillStyle = '#fff';
+            x.fillRect(6,2,2,2); x.fillRect(9,2,2,2);
+            x.fillStyle = '#000';
+            x.fillRect(7,3,1,1); x.fillRect(10,3,1,1);
+            // mouth
+            x.fillStyle = '#fff';
+            x.fillRect(7,5,3,1);
+            // body
+            x.fillStyle = '#000';
+            x.fillRect(4,6,8,5);
+            // arms
+            x.fillRect(2,7,2,4); x.fillRect(12,7,2,4);
+            // legs
+            x.fillRect(5,11,2,5); x.fillRect(9,11,2,5);
+            return c;
+        }
+
+        function drawPixelClock(size) {
+            const c = document.createElement('canvas');
+            c.width = 16; c.height = 16;
+            c.className = 'pixel-icon';
+            c.style.width = size + 'px'; c.style.height = size + 'px';
+            const x = c.getContext('2d');
+            x.imageSmoothingEnabled = false;
+            x.fillStyle = '#000';
+            // circle outline
+            x.fillRect(4,0,8,1); x.fillRect(2,1,2,1); x.fillRect(12,1,2,1);
+            x.fillRect(1,2,1,2); x.fillRect(14,2,1,2);
+            x.fillRect(0,4,1,8); x.fillRect(15,4,1,8);
+            x.fillRect(1,12,1,2); x.fillRect(14,12,1,2);
+            x.fillRect(2,14,2,1); x.fillRect(12,14,2,1);
+            x.fillRect(4,15,8,1);
+            // hands
+            x.fillRect(7,4,2,5); x.fillRect(9,7,3,2);
+            return c;
+        }
+
+        function showResult(reason) {
+            // Create result overlay
+            const overlay = document.createElement('div');
+            overlay.id = 'resultOverlay';
+            overlay.style.cssText = `
+                position: absolute;
+                inset: 0;
+                z-index: 100;
+                background: rgba(255,255,255,0.95);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                font-family: monospace;
+                animation: fadeIn 0.3s ease;
+            `;
+
+            let iconCanvas, title, subtitle;
+            if (reason === 'ai_won') {
+                iconCanvas = drawPixelRobot(80);
+                title = 'AI WINS!';
+                subtitle = `The word was: ${currentWord?.toUpperCase()}`;
+            } else if (reason === 'timeout') {
+                iconCanvas = drawPixelClock(80);
+                title = 'TIME\'S UP!';
+                subtitle = `The word was: ${currentWord?.toUpperCase()}`;
+            } else if (reason === 'player_won') {
+                iconCanvas = drawPixelHuman(80);
+                title = 'HUMANS WIN!';
+                subtitle = `${roundWinner || 'A player'} guessed: ${currentWord?.toUpperCase()}`;
+            } else {
+                iconCanvas = drawPixelHuman(80);
+                title = 'YOU WIN!';
+                subtitle = `Great drawing of: ${currentWord?.toUpperCase()}`;
+            }
+
+            overlay.appendChild(iconCanvas);
+
+            const titleEl = document.createElement('div');
+            titleEl.style.cssText = 'font-size: 36px; font-weight: bold; letter-spacing: 6px; color: #000;';
+            titleEl.textContent = title;
+            overlay.appendChild(titleEl);
+
+            const subEl = document.createElement('div');
+            subEl.style.cssText = 'font-size: 16px; color: #666; margin-top: 10px; letter-spacing: 2px;';
+            subEl.textContent = subtitle;
+            overlay.appendChild(subEl);
+
+            const btn = document.createElement('button');
+            btn.id = 'playAgainBtn';
+            btn.textContent = 'PLAY AGAIN';
+            btn.style.cssText = `
+                margin-top: 40px;
+                background: #000;
+                color: #fff;
+                border: none;
+                padding: 14px 40px;
+                font-size: 14px;
+                font-family: monospace;
+                font-weight: bold;
+                letter-spacing: 3px;
+                cursor: pointer;
+            `;
+            overlay.appendChild(btn);
+
+            document.getElementById('gameBoard').appendChild(overlay);
+
+            btn.addEventListener('click', () => {
+                overlay.remove();
+                resetForNewRound();
+            });
+        }
+
+        async function resetForNewRound() {
+            // Clear canvas
+            dctx.fillStyle = '#ffffff';
+            dctx.fillRect(0, 0, GRID_W, GRID_H);
+            undoStack = [];
+            redoStack = [];
+            refreshUndoRedo();
+
+            // Get new word
+            try {
+                const res = await fetch(`${API_BASE}/api/rooms/${roomCode}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hostId, action: 'start' }),
+                });
+                const data = await res.json();
+                startGame(data.word);
+            } catch (e) {
+                console.error('Failed to start new round:', e);
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  UTILS
+         * ═══════════════════════════════════════════════════════════════ */
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+    })();
+    </script>
+</body>
+</html>

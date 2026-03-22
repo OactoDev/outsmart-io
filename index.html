@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outsmart.io</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        img { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+        body {
+            background-color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            image-rendering: pixelated;
+            font-family: monospace;
+        }
+
+        .game-board {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            transform-origin: center center;
+        }
+
+        .locked-bg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+            image-rendering: pixelated;
+        }
+
+        #layer-eyes-bg     { position: absolute; top: 91px; left: 37px; width: 725px; height: auto; z-index: 3; pointer-events: none; image-rendering: pixelated; }
+        #layer-eyes-pupils { position: absolute; top: 92px; left: 33px; width: 725px; height: auto; z-index: 4; pointer-events: none; image-rendering: pixelated; }
+        #layer-canvas      { position: absolute; top: 67px; left: -45px; width: 905px; height: auto; z-index: 5; pointer-events: none; image-rendering: pixelated; }
+        #layer-slider      { position: absolute; top: 556px; left: -103px; width: 1275px; height: auto; z-index: 6; pointer-events: none; image-rendering: pixelated; }
+        #layer-outsmart    { position: absolute; top: 430px; left: 0px; width: 800px; height: auto; z-index: 7; pointer-events: none; image-rendering: pixelated; }
+
+        /* Drawing canvas sits inside the frame */
+        #drawCanvas {
+            position: absolute;
+            top: 189px;
+            left: 310px;
+            width: 339px;
+            height: 339px;
+            z-index: 21;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Tool sprites */
+        .tool-btn {
+            position: absolute;
+            z-index: 20;
+            cursor: pointer;
+            image-rendering: pixelated;
+            transition: transform 0.1s step-end, filter 0.05s step-end;
+            filter: drop-shadow(0 1px 0 rgba(0,0,0,0.2));
+        }
+        .tool-btn:hover {
+            transform: scale(1.1);
+            filter:
+                drop-shadow(1px 0 0 rgba(255,255,255,0.5))
+                drop-shadow(-1px 0 0 rgba(255,255,255,0.5))
+                drop-shadow(0 1px 0 rgba(255,255,255,0.5))
+                drop-shadow(0 -1px 0 rgba(255,255,255,0.5));
+        }
+        .tool-btn.active {
+            transform: scale(1.15);
+            filter:
+                drop-shadow(2px 0 0 #d0d0d0)
+                drop-shadow(-2px 0 0 #d0d0d0)
+                drop-shadow(0 2px 0 #d0d0d0)
+                drop-shadow(0 -2px 0 #d0d0d0)
+                drop-shadow(2px 2px 0 #d0d0d0)
+                drop-shadow(-2px -2px 0 #d0d0d0)
+                drop-shadow(2px -2px 0 #d0d0d0)
+                drop-shadow(-2px 2px 0 #d0d0d0);
+        }
+
+        /* Undo / Redo */
+        .action-btn {
+            position: absolute;
+            z-index: 20;
+            cursor: pointer;
+            image-rendering: pixelated;
+            transition: transform 0.1s ease, opacity 0.15s ease;
+            opacity: 0.85;
+        }
+        .action-btn:hover { transform: scale(1.15); opacity: 1; }
+        .action-btn.disabled { opacity: 0.3; pointer-events: none; }
+
+
+
+        /* Clock */
+        #clock-face {
+            position: absolute;
+            z-index: 25;
+            pointer-events: none;
+            image-rendering: pixelated;
+            transition: filter 0.15s step-end;
+        }
+        #clock-hand {
+            position: absolute;
+            z-index: 26;
+            pointer-events: none;
+            image-rendering: pixelated;
+        }
+        #clock-face.scan-flash {
+            filter: brightness(2) drop-shadow(0 0 6px #fff);
+        }
+
+        /* Scan overlay on canvas */
+        #scanOverlay {
+            position: absolute;
+            top: 189px;
+            left: 310px;
+            width: 339px;
+            height: 339px;
+            z-index: 22;
+            pointer-events: none;
+            opacity: 0;
+            background: linear-gradient(
+                transparent 0%,
+                transparent calc(var(--scan-y, 0%) - 2px),
+                rgba(255,255,255,0.7) var(--scan-y, 0%),
+                transparent calc(var(--scan-y, 0%) + 2px),
+                transparent 100%
+            );
+            mix-blend-mode: screen;
+        }
+        #scanOverlay.active {
+            opacity: 1;
+        }
+
+        /* Tooltip */
+        #toolInfo {
+            position: absolute;
+            z-index: 50;
+            background: rgba(0,0,0,0.82);
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 9px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            white-space: nowrap;
+            letter-spacing: 0.5px;
+        }
+        #toolInfo.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div class="game-board" id="gameBoard">
+        <!-- Background -->
+        <img src="pixilart-layers/background.png" class="locked-bg">
+
+        <!-- Eyes (skull + pupils) -->
+        <img id="layer-eyes-bg"     src="pixilart-layers/eyes-bg.png">
+        <img id="layer-eyes-pupils" src="pixilart-layers/eyes-pupils.png">
+
+        <!-- Canvas frame & decorative layers -->
+        <img id="layer-canvas"      src="pixilart-layers/canvas.png">
+        <img id="layer-slider"      src="pixilart-layers/slider.png">
+        <img id="layer-outsmart"    src="pixilart-layers/outsmart.png">
+
+        <!-- Functional drawing canvas -->
+        <canvas id="drawCanvas"></canvas>
+        <div id="scanOverlay"></div>
+
+        <!-- Tool buttons -->
+        <img id="btn-pencil"  class="tool-btn active" src="layer8_sprites/pencil.png"   data-tool="pencil"  title="Pencil (P)">
+        <img id="btn-brush"   class="tool-btn"        src="layer8_sprites/brush.png"    data-tool="brush"   title="Brush (B)">
+        <img id="btn-eraser"  class="tool-btn"        src="layer8_sprites/eraser.png"   data-tool="eraser"  title="Eraser (E)">
+        <img id="btn-spray"   class="tool-btn"        src="layer8_sprites/spraycan.png" data-tool="spray"   title="Spray (S)">
+        <img id="btn-drag"    class="tool-btn"        src="layer8_sprites/drag.png"     data-tool="drag"    title="Drag (D)">
+        <img id="btn-text"    class="tool-btn"        src="layer8_sprites/text.png"     data-tool="text"    title="Text (T)">
+        <img id="btn-bucket"  class="tool-btn"        src="layer8_sprites/bucket.png"   data-tool="bucket"  title="Fill (F)">
+
+        <!-- Undo / Redo -->
+        <img id="btn-undo" class="action-btn disabled" src="pixilart-layers/undo.png" title="Undo (Ctrl+Z)">
+        <img id="btn-redo" class="action-btn disabled" src="pixilart-layers/redo.png" title="Redo (Ctrl+Shift+Z)">
+
+        <!-- Clock -->
+        <img id="clock-face" src="pixilart-layers/clock-cropped.png">
+        <img id="clock-hand" src="pixilart-layers/clockhand-cropped.png">
+
+        <!-- Tooltip -->
+        <div id="toolInfo"></div>
+    </div>
+
+    <script>
+    (() => {
+        /* ═══════════════════════════════════════════════════════════════
+         *  CONSTANTS
+         * ═══════════════════════════════════════════════════════════════ */
+        // Eye tracking: max horizontal pixel offset for pupils
+        const MAX_EYE_OFFSET = 8;
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  POSITION UI ELEMENTS (matching original layout)
+         * ═══════════════════════════════════════════════════════════════ */
+        const toolPositions = {
+            'btn-pencil':  { top: 368, left: 205, w: 80  },
+            'btn-brush':   { top: 229, left: 148, w: 85  },
+            'btn-eraser':  { top: 356, left: 149, w: 85  },
+            'btn-spray':   { top: 186, left: 243, w: 40  },
+            'btn-drag':    { top: 277, left: 207, w: 75  },
+            'btn-text':    { top: 462, left: 204, w: 60  },
+            'btn-bucket':  { top: 163, left: 164, w: 65  },
+        };
+        for (const [id, p] of Object.entries(toolPositions)) {
+            const el = document.getElementById(id);
+            Object.assign(el.style, { top: p.top+'px', left: p.left+'px', width: p.w+'px', height: 'auto' });
+        }
+
+        Object.assign(document.getElementById('btn-undo').style,
+            { top:'136px', left:'571px', width:'45px', height:'auto' });
+        Object.assign(document.getElementById('btn-redo').style,
+            { top:'136px', left:'624px', width:'45px', height:'auto' });
+
+        /* ── Clock positioning ──────────────────────────────────── */
+        Object.assign(document.getElementById('clock-face').style, {
+            left: '-82px', top: '351px', width: '288px', height: 'auto'
+        });
+        Object.assign(document.getElementById('clock-hand').style, {
+            left: '5px', top: '556px', width: '119px', height: 'auto',
+            transformOrigin: '4px 5px'
+        });
+
+        // Always black
+        const currentColor = '#000000';
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  DRAWING CANVAS
+         * ═══════════════════════════════════════════════════════════════ */
+        const drawCanvas = document.getElementById('drawCanvas');
+        const dctx = drawCanvas.getContext('2d');
+
+        // Pixel-art grid resolution (square to match frame)
+        const GRID_W = 170;
+        const GRID_H = 170;
+        drawCanvas.width  = GRID_W;
+        drawCanvas.height = GRID_H;
+        drawCanvas.style.pointerEvents = 'auto';
+
+        dctx.imageSmoothingEnabled = false;
+        dctx.fillStyle = '#ffffff';
+        dctx.fillRect(0, 0, GRID_W, GRID_H);
+
+        /* ── Undo / Redo stack ─────────────────────────────────────── */
+        let undoStack = [];
+        let redoStack = [];
+        const MAX_UNDO = 60;
+
+        function saveState() {
+            undoStack.push(dctx.getImageData(0, 0, GRID_W, GRID_H));
+            if (undoStack.length > MAX_UNDO) undoStack.shift();
+            redoStack = [];
+            refreshUndoRedo();
+        }
+        function undo() {
+            if (!undoStack.length) return;
+            redoStack.push(dctx.getImageData(0, 0, GRID_W, GRID_H));
+            dctx.putImageData(undoStack.pop(), 0, 0);
+            refreshUndoRedo();
+        }
+        function redo() {
+            if (!redoStack.length) return;
+            undoStack.push(dctx.getImageData(0, 0, GRID_W, GRID_H));
+            dctx.putImageData(redoStack.pop(), 0, 0);
+            refreshUndoRedo();
+        }
+        function refreshUndoRedo() {
+            document.getElementById('btn-undo').classList.toggle('disabled', !undoStack.length);
+            document.getElementById('btn-redo').classList.toggle('disabled', !redoStack.length);
+        }
+        document.getElementById('btn-undo').addEventListener('click', undo);
+        document.getElementById('btn-redo').addEventListener('click', redo);
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  PIXELATED CURSORS  –  drawn on tiny canvases, exported as data-URLs
+         * ═══════════════════════════════════════════════════════════════ */
+        function makeCursor(drawFn, size, hotX, hotY) {
+            const c = document.createElement('canvas');
+            c.width = size; c.height = size;
+            const x = c.getContext('2d');
+            x.imageSmoothingEnabled = false;
+            drawFn(x, size);
+            return `url(${c.toDataURL()}) ${hotX} ${hotY}, auto`;
+        }
+
+        const CURSORS = {};
+
+        // ✏️ Pencil – small crosshair with a pixel nub
+        CURSORS.pencil = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#000';
+            c.fillRect(m, 0, 2, m - 2);           // top
+            c.fillRect(m, m + 3, 2, m - 2);       // bottom
+            c.fillRect(0, m, m - 2, 2);            // left
+            c.fillRect(m + 3, m, m - 2, 2);       // right
+            c.fillStyle = '#ffcc00';
+            c.fillRect(m - 1, m - 1, 4, 4);       // center glow
+            c.fillStyle = '#000';
+            c.fillRect(m, m, 2, 2);                // center dot
+        }, 24, 12, 12);
+
+        // 🖌 Brush – filled circle
+        CURSORS.brush = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.strokeStyle = '#333';
+            c.lineWidth = 2;
+            c.beginPath(); c.arc(m, m, m - 3, 0, Math.PI * 2); c.stroke();
+            c.fillStyle = 'rgba(100,100,255,0.15)';
+            c.fill();
+            c.fillStyle = '#333';
+            c.fillRect(m - 1, m - 1, 3, 3);
+        }, 32, 16, 16);
+
+        // 🧽 Eraser – pink square with X
+        CURSORS.eraser = makeCursor((c, s) => {
+            c.fillStyle = '#ffe0e0';
+            c.fillRect(3, 3, s - 6, s - 6);
+            c.strokeStyle = '#e44';
+            c.lineWidth = 2;
+            c.strokeRect(3, 3, s - 6, s - 6);
+            c.beginPath();
+            c.moveTo(7, 7);   c.lineTo(s - 7, s - 7);
+            c.moveTo(s - 7, 7); c.lineTo(7, s - 7);
+            c.stroke();
+        }, 24, 12, 12);
+
+        // 💨 Spray – scattered dots
+        CURSORS.spray = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#333';
+            [[m,m-5],[m-4,m-3],[m+4,m-2],[m-3,m+1],[m+3,m+3],
+             [m,m+5],[m-5,m],[m+5,m],[m-2,m-2],[m+2,m-4],
+             [m+1,m+2],[m-1,m+4]].forEach(([x,y]) => c.fillRect(x,y,2,2));
+            c.strokeStyle = 'rgba(0,0,0,0.25)';
+            c.lineWidth = 1;
+            c.setLineDash([2, 2]);
+            c.beginPath(); c.arc(m, m, m - 2, 0, Math.PI * 2); c.stroke();
+        }, 28, 14, 14);
+
+        // ✋ Drag – four-way arrows
+        CURSORS.drag = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#000';
+            c.fillRect(m - 1, 4, 3, s - 8);
+            c.fillRect(4, m - 1, s - 8, 3);
+            // Arrowheads
+            [[m,1,5],[m-2,4,1],[m+2,4,1]].forEach(([x,y,h]) => c.fillRect(x,y,1,h));
+            [[m,s-2,5],[m-2,s-5,1],[m+2,s-5,1]].forEach(([x,y]) => c.fillRect(x,y,1,1));
+            c.beginPath();
+            c.moveTo(m, 1);   c.lineTo(m-3,5);  c.lineTo(m+4,5);  c.fill();
+            c.beginPath();
+            c.moveTo(m, s-1); c.lineTo(m-3,s-5);c.lineTo(m+4,s-5);c.fill();
+            c.beginPath();
+            c.moveTo(1, m);   c.lineTo(5,m-3);  c.lineTo(5,m+4);  c.fill();
+            c.beginPath();
+            c.moveTo(s-1, m); c.lineTo(s-5,m-3);c.lineTo(s-5,m+4);c.fill();
+        }, 24, 12, 12);
+
+        // 🔤 Text – I-beam
+        CURSORS.text = makeCursor((c, s) => {
+            const m = s >> 1;
+            c.fillStyle = '#000';
+            c.fillRect(m - 1, 3, 3, s - 6);
+            c.fillRect(m - 5, 3, 11, 2);
+            c.fillRect(m - 5, s - 5, 11, 2);
+        }, 24, 12, 12);
+
+        // 🪣 Bucket – paint bucket
+        CURSORS.bucket = makeCursor((c, s) => {
+            c.fillStyle = '#555';
+            c.fillRect(4, 10, 14, 11);
+            c.fillStyle = '#4ac';
+            c.fillRect(5, 11, 12, 9);
+            c.fillStyle = '#555';
+            c.fillRect(9, 5, 6, 5);
+            c.fillRect(15, 7, 2, 5);
+            c.fillStyle = '#4ac';
+            c.fillRect(17, 12, 3, 2);
+            c.fillRect(19, 14, 2, 3);
+        }, 24, 19, 20);
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  TOOL STATE
+         * ═══════════════════════════════════════════════════════════════ */
+        let currentTool = 'pencil';
+        let brushSize   = 2;
+        let isDrawing   = false;
+        let lastX = -1, lastY = -1;
+        let dragStartX, dragStartY, dragSnapshot;
+
+        function selectTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.querySelector(`[data-tool="${tool}"]`);
+            if (btn) btn.classList.add('active');
+            drawCanvas.style.cursor = CURSORS[tool] || 'crosshair';
+        }
+
+        document.querySelectorAll('.tool-btn').forEach(btn =>
+            btn.addEventListener('click', () => selectTool(btn.dataset.tool)));
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const map = { p:'pencil', b:'brush', e:'eraser', s:'spray', d:'drag', t:'text', f:'bucket' };
+            if (map[e.key]) selectTool(map[e.key]);
+            if (e.key === '[') brushSize = Math.max(1, brushSize - 1);
+            if (e.key === ']') brushSize = Math.min(16, brushSize + 1);
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+        });
+
+        selectTool('pencil');
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  DRAWING HELPERS
+         * ═══════════════════════════════════════════════════════════════ */
+        function toGrid(e) {
+            const r = drawCanvas.getBoundingClientRect();
+            return {
+                x: Math.floor((e.clientX - r.left) * GRID_W / r.width),
+                y: Math.floor((e.clientY - r.top)  * GRID_H / r.height)
+            };
+        }
+
+        function stamp(x, y, size, color) {
+            dctx.fillStyle = color;
+            const h = size >> 1;
+            for (let dy = -h; dy < size - h; dy++)
+                for (let dx = -h; dx < size - h; dx++) {
+                    const px = x + dx, py = y + dy;
+                    if (px >= 0 && px < GRID_W && py >= 0 && py < GRID_H)
+                        dctx.fillRect(px, py, 1, 1);
+                }
+        }
+
+        function line(x0, y0, x1, y1, size, color) {
+            const dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+            const sx = x0<x1?1:-1,       sy = y0<y1?1:-1;
+            let err = dx - dy;
+            for (;;) {
+                stamp(x0, y0, size, color);
+                if (x0===x1 && y0===y1) break;
+                const e2 = 2*err;
+                if (e2 > -dy) { err -= dy; x0 += sx; }
+                if (e2 <  dx) { err += dx; y0 += sy; }
+            }
+        }
+
+        function spray(x, y, radius, count, color) {
+            dctx.fillStyle = color;
+            for (let i = 0; i < count; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const d = Math.random() * radius;
+                const px = Math.round(x + Math.cos(a)*d);
+                const py = Math.round(y + Math.sin(a)*d);
+                if (px>=0 && px<GRID_W && py>=0 && py<GRID_H)
+                    dctx.fillRect(px, py, 1, 1);
+            }
+        }
+
+        function floodFill(sx, sy, fillHex) {
+            if (sx<0||sx>=GRID_W||sy<0||sy>=GRID_H) return;
+            const imgData = dctx.getImageData(0,0,GRID_W,GRID_H);
+            const d = imgData.data;
+            const ti = (sy*GRID_W+sx)*4;
+            const tR=d[ti],tG=d[ti+1],tB=d[ti+2],tA=d[ti+3];
+            // parse hex → RGBA
+            const tc = document.createElement('canvas'); tc.width=tc.height=1;
+            const tx = tc.getContext('2d'); tx.fillStyle=fillHex; tx.fillRect(0,0,1,1);
+            const fc = tx.getImageData(0,0,1,1).data;
+            if (tR===fc[0]&&tG===fc[1]&&tB===fc[2]&&tA===fc[3]) return;
+            const stack = [[sx,sy]];
+            const seen = new Uint8Array(GRID_W*GRID_H);
+            while (stack.length) {
+                const [x,y] = stack.pop();
+                const k = y*GRID_W+x;
+                if (seen[k]) continue;
+                if (x<0||x>=GRID_W||y<0||y>=GRID_H) continue;
+                const i = k*4;
+                if (d[i]!==tR||d[i+1]!==tG||d[i+2]!==tB||d[i+3]!==tA) continue;
+                seen[k] = 1;
+                d[i]=fc[0]; d[i+1]=fc[1]; d[i+2]=fc[2]; d[i+3]=fc[3];
+                stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+            }
+            dctx.putImageData(imgData,0,0);
+        }
+
+        /* ── Canvas mouse handling ─────────────────────────────────── */
+        drawCanvas.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            const {x,y} = toGrid(e);
+            isDrawing = true;
+            lastX = x; lastY = y;
+
+            if (currentTool === 'bucket') {
+                saveState();
+                floodFill(x, y, currentColor);
+                isDrawing = false;
+                return;
+            }
+            if (currentTool === 'text') {
+                const txt = prompt('Enter text:');
+                if (txt) {
+                    saveState();
+                    dctx.fillStyle = currentColor;
+                    dctx.font = `bold ${Math.max(6, brushSize*3)}px monospace`;
+                    dctx.textBaseline = 'top';
+                    dctx.fillText(txt, x, y);
+                }
+                isDrawing = false;
+                return;
+            }
+            if (currentTool === 'drag') {
+                dragStartX = x; dragStartY = y;
+                dragSnapshot = dctx.getImageData(0,0,GRID_W,GRID_H);
+                return;
+            }
+
+            saveState();
+            const col = currentTool === 'eraser' ? '#ffffff' : currentColor;
+            if (currentTool === 'spray') spray(x, y, brushSize*3, brushSize*10, col);
+            else stamp(x, y, currentTool==='brush' ? brushSize+1 : brushSize, col);
+        });
+
+        drawCanvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const {x,y} = toGrid(e);
+
+            if (currentTool === 'drag') {
+                dctx.putImageData(dragSnapshot, x-dragStartX, y-dragStartY);
+                return;
+            }
+
+            const col = currentTool === 'eraser' ? '#ffffff' : currentColor;
+            if (currentTool === 'spray') {
+                spray(x, y, brushSize*3, brushSize*5, col);
+            } else {
+                line(lastX, lastY, x, y, currentTool==='brush' ? brushSize+1 : brushSize, col);
+            }
+            lastX = x; lastY = y;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isDrawing && currentTool === 'drag' && dragSnapshot) saveState();
+            isDrawing = false;
+            lastX = lastY = -1;
+        });
+
+        // Scroll → brush size
+        drawCanvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            brushSize = Math.max(1, Math.min(16, brushSize + (e.deltaY < 0 ? 1 : -1)));
+        }, { passive: false });
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  EYE TRACKING  –  pupils follow mouse horizontally only,
+         *  clamped so they never leave the eye-socket outlines.
+         * ═══════════════════════════════════════════════════════════════ */
+        const pupilsEl = document.getElementById('layer-eyes-pupils');
+        let boardMX = 400;   // centre default
+        let eyeOverride = false;
+        const CANVAS_CENTER_X = 310 + 339 / 2; // ~480 in board coords
+
+        document.getElementById('gameBoard').addEventListener('mousemove', (e) => {
+            const r = document.getElementById('gameBoard').getBoundingClientRect();
+            boardMX = (e.clientX - r.left) * (800 / r.width);
+        });
+
+        function tickEyes() {
+            // During a scan, eyes lock onto the canvas center
+            const lookX = eyeOverride ? CANVAS_CENTER_X : boardMX;
+
+            const eyesCenterX = 400;
+            const delta = lookX - eyesCenterX;
+
+            // Normalise to -1 … +1 over a generous range
+            const norm = Math.max(-1, Math.min(1, delta / 300));
+
+            // Offset in display pixels — horizontal only
+            const off = norm * MAX_EYE_OFFSET;
+
+            // Apply only horizontal translation — pupils MUST NOT move vertically
+            pupilsEl.style.transform = `translateX(${off}px)`;
+            requestAnimationFrame(tickEyes);
+        }
+        tickEyes();
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  CLOCK ANIMATION — 10-second rounds, triggers scan at 0
+         * ═══════════════════════════════════════════════════════════════ */
+        const clockHandEl  = document.getElementById('clock-hand');
+        const clockFaceEl  = document.getElementById('clock-face');
+        const scanOverlay  = document.getElementById('scanOverlay');
+        const ROUND_SECS   = 10;
+        const SCAN_DURATION = 800;
+        let scanning       = false;
+        let scanStartTime  = 0;
+
+        function triggerScan() {
+            if (scanning) return;
+            scanning = true;
+            scanStartTime = performance.now();
+
+            // Flash the clock face
+            clockFaceEl.classList.add('scan-flash');
+            setTimeout(() => clockFaceEl.classList.remove('scan-flash'), 300);
+
+            // Eyes snap to look at the canvas
+            eyeOverride = true;
+
+            // Start the scan-line sweep
+            scanOverlay.classList.add('active');
+        }
+
+        function tickClock() {
+            // Clock hand: full rotation every ROUND_SECS
+            const now = new Date();
+            const ms = (now.getSeconds() % ROUND_SECS) * 1000 + now.getMilliseconds();
+            const progress = ms / (ROUND_SECS * 1000);
+            const angle = progress * 360;
+            clockHandEl.style.transform = `rotate(${angle}deg)`;
+
+            // Trigger scan when hand crosses 12 o'clock
+            if (progress < 0.02 && !scanning) {
+                triggerScan();
+            }
+
+            // Animate the scan-line overlay
+            if (scanning) {
+                const elapsed = performance.now() - scanStartTime;
+                const scanProgress = Math.min(1, elapsed / SCAN_DURATION);
+                scanOverlay.style.setProperty('--scan-y', (scanProgress * 100) + '%');
+
+                if (scanProgress >= 1) {
+                    scanning = false;
+                    eyeOverride = false;
+                    scanOverlay.classList.remove('active');
+                }
+            }
+
+            requestAnimationFrame(tickClock);
+        }
+        tickClock();
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  TOOLTIP on tool hover
+         * ═══════════════════════════════════════════════════════════════ */
+        const tip = document.getElementById('toolInfo');
+        document.querySelectorAll('.tool-btn, .action-btn').forEach(btn => {
+            btn.addEventListener('mouseenter', () => {
+                tip.textContent = btn.title || '';
+                if (!tip.textContent) return;
+                tip.classList.add('visible');
+                const br = btn.getBoundingClientRect();
+                const gr = document.getElementById('gameBoard').getBoundingClientRect();
+                const sc = 800 / gr.width;
+                tip.style.left = ((br.right - gr.left) * sc + 6) + 'px';
+                tip.style.top  = ((br.top   - gr.top)  * sc)     + 'px';
+            });
+            btn.addEventListener('mouseleave', () => tip.classList.remove('visible'));
+        });
+
+        /* ═══════════════════════════════════════════════════════════════
+         *  AUTO-SCALE to viewport
+         * ═══════════════════════════════════════════════════════════════ */
+        function scaleGame() {
+            const board = document.getElementById('gameBoard');
+            const s = Math.min(window.innerWidth / 720, window.innerHeight / 520) * 0.95;
+            board.style.transform = `scale(${s})`;
+        }
+        scaleGame();
+        window.addEventListener('resize', scaleGame);
+
+    })();
+    </script>
+</body>
+</html>
