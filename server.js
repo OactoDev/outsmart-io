@@ -1,11 +1,24 @@
 /**
- * Local dev server — serves static files + emulates Vercel API routes
+ * HTTP server — serves static files + handles all API routes.
+ * Works locally (dev) and on any persistent Node.js host (Render, Railway, etc.)
  * Usage: node server.js
  */
 const http   = require('http');
 const fs     = require('fs');
 const path   = require('path');
 const { URL } = require('url');
+
+// ── Pre-load API modules at startup so errors appear in logs immediately ─────
+const apiHandler  = require('./api/index.js');
+const { subscribe: sseSubscribe } = require('./api/_lib/events');
+
+// ── Crash guard — prevent the process dying on unhandled async errors ─────────
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
 
 // ── Live-reload: track SSE clients ───────────────────────────────────────────
 const liveReloadClients = new Set();
@@ -221,27 +234,33 @@ const server = http.createServer(async (req, res) => {
       try { res.write(`:keepalive\n\n`); } catch {}
     }, 15000);
 
-    const { subscribe } = require('./api/_lib/events');
-    const unsub = subscribe(room.toUpperCase(), (msg) => {
+    const unsub = sseSubscribe(room.toUpperCase(), (msg) => {
       try { res.write(`event: ${msg.event}\ndata: ${JSON.stringify(msg.data)}\n\n`); } catch {}
     });
     req.on('close', () => { unsub(); clearInterval(keepAlive); });
     return;
   }
 
+  // ── Health check (used by Render to verify the service is alive) ────────────
+  if (urlPath === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, uptime: process.uptime() }));
+    return;
+  }
+
   // ── API routes — all handled by consolidated api/index.js ─────────────────
   if (urlPath.startsWith('/api/')) {
-    const body   = await readBody(req);
-    const vReq   = buildVercelReq(req, body, {});
-    const vRes   = buildVercelRes(res);
+    let body = {};
+    try { body = await readBody(req); } catch { /* ignore body parse errors */ }
+    const vReq = buildVercelReq(req, body, {});
+    const vRes = buildVercelRes(res);
     try {
-      const handler = require('./api/index.js');
-      await (handler.default || handler)(vReq, vRes);
+      await (apiHandler.default || apiHandler)(vReq, vRes);
     } catch (err) {
-      console.error('[API]', urlPath, err.message);
+      console.error('[API error]', req.method, urlPath, err.stack || err.message);
       if (!res.writableEnded) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: err.message }));
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: String(err.message || err) }));
       }
     }
     return;
