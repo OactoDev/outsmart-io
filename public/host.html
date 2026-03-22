@@ -1162,8 +1162,8 @@
             runCountdown(word, () => {
                 gamePhase = 'drawing';
                 // Show clock now that the round is live
-                clockFaceEl.style.display = '';
-                clockHandEl.style.display = '';
+                clockFaceEl.style.display = 'block';
+                clockHandEl.style.display = 'block';
                 // Start timers
                 roundTimeLeft = ROUND_SECONDS;
                 startRoundTimer();
